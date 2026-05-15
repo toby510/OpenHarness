@@ -232,6 +232,9 @@ class OpenAICompatibleClient:
     so it can be used as a drop-in replacement in the agent loop.
     """
 
+    # todo @Toby注释: [API层-OpenAI客户端] 封装 OpenAI SDK(AsyncOpenAI)。
+    # 使用 Authorization: Bearer 头认证。DeepSeek/OpenAI/通义千问/Gemini 等
+    # 所有 OpenAI-compatible 后端都走这个客户端。
     def __init__(self, api_key: str, *, base_url: str | None = None, timeout: float | None = None) -> None:
         kwargs: dict[str, Any] = {
             "api_key": api_key,
@@ -246,6 +249,8 @@ class OpenAICompatibleClient:
 
     async def stream_message(self, request: ApiMessageRequest) -> AsyncIterator[ApiStreamEvent]:
         """Yield text deltas and the final message, matching the Anthropic client interface."""
+        # todo @Toby注释: [API层-流式入口] 与 AnthropicApiClient 同接口，带重试。
+        # 你的 DeepSeek 请求就是从这里发出去的。
         last_error: Exception | None = None
 
         for attempt in range(MAX_RETRIES + 1):
@@ -278,6 +283,9 @@ class OpenAICompatibleClient:
 
     async def _stream_once(self, request: ApiMessageRequest) -> AsyncIterator[ApiStreamEvent]:
         """Single attempt: stream an OpenAI chat completion."""
+        # todo @Toby注释: [API层-单次流式] 将 Harness 内部消息格式转为 OpenAI 格式，
+        # 调用 SDK stream → 逐块收集 text/reasoning/tool_calls → 流结束后
+        # yield ApiMessageCompleteEvent(完整消息 + token用量 + stop_reason)
         openai_messages = _convert_messages_to_openai(request.messages, request.system_prompt)
         openai_tools = _convert_tools_to_openai(request.tools) if request.tools else None
 
@@ -388,6 +396,8 @@ class OpenAICompatibleClient:
         if collected_reasoning:
             final_message._reasoning = collected_reasoning  # type: ignore[attr-defined]
 
+        # todo @Toby注释: [API层-返回] 流结束，返回统一格式的 ApiMessageCompleteEvent。
+        # stop_reason 决定了上层 run_query 的下一步：end_turn(退出) 或 tool_calls(执行工具)
         yield ApiMessageCompleteEvent(
             message=final_message,
             usage=UsageSnapshot(

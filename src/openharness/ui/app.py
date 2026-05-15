@@ -185,6 +185,11 @@ async def run_print_mode(
     max_turns: int | None = None,
 ) -> None:
     """Non-interactive mode: submit prompt, stream output, exit."""
+    # todo @Toby注释: [入口装配] run_print_mode 是 oh -p 的入口。
+    # 装配流程: build_runtime(解析Settings→创建API Client→注册Tools→组装QueryEngine)
+    #         → start_runtime(启动CLAUDE.md/skills感知、组件初始化)
+    #         → bundle.engine.submit_message(prompt) → 进入 run_query 核心循环
+    #         → 渲染 StreamEvent 到 stdout/stderr
     from openharness.engine.stream_events import (
         AssistantTextDelta,
         AssistantTurnComplete,
@@ -196,11 +201,14 @@ async def run_print_mode(
     )
 
     async def _noop_permission(tool_name: str, reason: str) -> bool:
+        # todo @Toby注释: -p 模式下无交互UI，所有权限确认自动返回 True(允许)
         return True
 
     async def _noop_ask(question: str) -> str:
         return ""
 
+    # todo @Toby注释: [装配-步骤1] build_runtime 负责 4 个核心装配：
+    # Settings 解析 → API Client 创建(根据 api_format 选 Anthropic/OpenAI/Copilot) → ToolRegistry 注册全部工具 → QueryEngine 组装
     bundle = await build_runtime(
         prompt=prompt,
         cwd=cwd,

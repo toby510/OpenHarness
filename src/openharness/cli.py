@@ -2423,6 +2423,8 @@ def main(
         )
         return
 
+    # todo @Toby注释: [CLI路由] oh -p "xxx" 走这个分支。
+    # main() → run_print_mode() → 内部组装 Settings/API Client/QueryEngine → query_engine.submit_message()
     if print_mode is not None:
         prompt = print_mode.strip()
         if not prompt:

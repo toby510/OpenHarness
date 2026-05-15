@@ -28,6 +28,9 @@ class FileReadTool(BaseTool):
         del arguments
         return True
 
+    # todo @Toby注释: [工具实例-ReadTool] Harness 中所有工具的 execute() 接口都一致：
+    # 接收 Pydantic 校验后的 arguments + ToolExecutionContext，返回 ToolResult。
+    # 这个工具演示了典型的执行流程：路径解析 → 安全校验(sandbox/敏感路径) → 读文件 → 格式化输出
     async def execute(
         self,
         arguments: FileReadToolInput,

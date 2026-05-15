@@ -134,6 +134,8 @@ class AnthropicApiClient:
         self._session_id = get_claude_code_session_id() if claude_oauth else ""
         self._client = self._create_client()
 
+    # todo @Toby注释: [API层] 创建 AsyncAnthropic 实例。api_key → x-api-key 头，
+    # base_url 指向 Anthropic-compatible 端点(Claude官方/Kimi兼容/GLM兼容等)。
     def _create_client(self) -> AsyncAnthropic:
         kwargs: dict[str, Any] = {}
         if self._api_key:
@@ -159,6 +161,9 @@ class AnthropicApiClient:
 
     async def stream_message(self, request: ApiMessageRequest) -> AsyncIterator[ApiStreamEvent]:
         """Yield text deltas and the final assistant message with retry on transient errors."""
+        # todo @Toby注释: [API层-流式入口] 带重试(最多3次)的流式请求。
+        # 调用 _stream_once 发起一次流式调用，失败则指数退避重试。
+        # Auth/权限错误不重试，直接抛异常。
         last_error: Exception | None = None
 
         for attempt in range(MAX_RETRIES + 1):
@@ -197,6 +202,9 @@ class AnthropicApiClient:
 
     async def _stream_once(self, request: ApiMessageRequest) -> AsyncIterator[ApiStreamEvent]:
         """Single attempt at streaming a message."""
+        # todo @Toby注释: [API层-单次流式] 构建 Anthropic Messages API 参数，
+        # 调用 SDK stream → 逐块 yield ApiTextDeltaEvent(增量文本)，
+        # 流结束后 yield ApiMessageCompleteEvent(完整消息 + token用量 + stop_reason)
         params: dict[str, Any] = {
             "model": request.model,
             "messages": [message.to_api_param() for message in request.messages],
@@ -246,6 +254,8 @@ class AnthropicApiClient:
                 raise  # Let retry logic handle it
             raise _translate_api_error(exc) from exc
 
+        # todo @Toby注释: [API层-返回] 流结束，组装最终消息：assistant_message_from_api
+        # 把 SDK 的 Message 对象转换成引擎层的 ConversationMessage
         usage = getattr(final_message, "usage", None)
         yield ApiMessageCompleteEvent(
             message=assistant_message_from_api(final_message),

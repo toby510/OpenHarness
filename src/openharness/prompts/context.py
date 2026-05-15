@@ -103,7 +103,7 @@ def build_runtime_system_prompt(
         f"- Passes: {settings.passes}\n"
         "Adjust depth and iteration count to match these settings while still completing the task."
     )
-
+    # todo @Toby注释: [装配-步骤7.1]加载项目skill模块
     skills_section = _build_skills_section(
         cwd,
         extra_skill_dirs=extra_skill_dirs,
@@ -116,10 +116,12 @@ def build_runtime_system_prompt(
     if not is_coordinator_mode():
         sections.append(_build_delegation_section())
 
+    # todo @Toby注释: [装配-步骤7.2]加载claude.md所有内容
     claude_md = load_claude_md_prompt(cwd)
     if claude_md:
         sections.append(claude_md)
 
+    # todo @Toby注释: [装配-步骤7.3]加载rules.md所有内容
     local_rules = load_local_rules()
     if local_rules:
         sections.append(f"# Local Environment Rules\n\n{local_rules}")
@@ -134,6 +136,7 @@ def build_runtime_system_prompt(
             if content:
                 sections.append(f"# {title}\n\n```md\n{content[:12000]}\n```")
 
+    # todo @Toby注释: [装配-步骤7.4]加载memory.md所有内容，以及跟提问相关的Relevant Memories
     if include_project_memory and settings.memory.enabled:
         memory_section = load_memory_prompt(
             cwd,

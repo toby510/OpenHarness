@@ -81,6 +81,13 @@ class PermissionChecker:
         command: str | None = None,
     ) -> PermissionDecision:
         """Return whether the tool may run immediately."""
+        # todo @Toby注释: [权限检查] 权限决策按优先级依次判断：
+        # 1. 敏感路径保护(SSH/AWS密钥等，永不放开)
+        # 2. 显式拒绝列表
+        # 3. 显式允许列表
+        # 4. 路径规则(glob匹配)
+        # 5. 命令拒绝模式
+        # 6. 根据 mode 决定：auto全放 → read_only放 → plan全拒 → default需要确认
         # Built-in sensitive path protection — always active, cannot be
         # overridden by user settings or permission mode.  This is a
         # defence-in-depth measure against LLM-directed or prompt-injection

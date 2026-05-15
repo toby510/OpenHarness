@@ -164,6 +164,9 @@ class QueryEngine:
 
     async def submit_message(self, prompt: str | ConversationMessage) -> AsyncIterator[StreamEvent]:
         """Append a user message and execute the query loop."""
+        # todo @Toby注释: [查询入口] 把用户输入 append 到对话历史，组装 QueryContext
+        # (含 api_client + tool_registry + permission_checker + system_prompt)，
+        # 然后调 run_query() 启动核心循环。循环结束后触发 auto_dream(记忆归档)。
         user_message = (
             prompt
             if isinstance(prompt, ConversationMessage)

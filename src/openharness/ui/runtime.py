@@ -268,6 +268,7 @@ async def build_runtime(
     autodream_context: dict[str, object] | None = None,
 ) -> RuntimeBundle:
     """Build the shared runtime for an OpenHarness session."""
+    # todo @Toby注释: [装配-步骤1] 加载 Settings，合并 CLI 参数/环境变量/配置文件三层覆盖
     settings_overrides: dict[str, Any] = {
         "model": model,
         "max_turns": max_turns,
@@ -283,18 +284,26 @@ async def build_runtime(
     normalized_skill_dirs = tuple(str(Path(path).expanduser().resolve()) for path in (extra_skill_dirs or ()))
     normalized_plugin_roots = tuple(str(Path(path).expanduser().resolve()) for path in (extra_plugin_roots or ()))
     plugins = load_plugins(settings, cwd, extra_roots=normalized_plugin_roots)
+
+    # todo @Toby注释: [装配-步骤2] 解析 API Client（里面对接了多个大模型提供商，比如claude/codex/gpt等）：
+    # 根据 api_format(anthropic/openai/copilot/codex) 和 auth_source 选择对应的客户端
     if api_client:
         resolved_api_client = api_client
     else:
         resolved_api_client = _resolve_api_client_from_settings(settings)
+
+    # todo @Toby注释: [装配-步骤3] 连接 MCP 服务器，加载外部工具
     mcp_manager = McpClientManager(load_mcp_server_configs(settings, plugins))
     await mcp_manager.connect_all()
+
+    # todo @Toby注释: [装配-步骤4] 注册所有内置工具（43+个）+ 插件提供的自定义工具
     tool_registry = create_default_tool_registry(mcp_manager)
-    # Register plugin-provided tools
     for plugin in plugins:
         if plugin.enabled and plugin.tools:
             for tool in plugin.tools:
                 tool_registry.register(tool)
+    # todo @Toby注释: [装配-步骤5] 创建 AppState — 给 React TUI 提供的全局状态快照
+    # (model/permission_mode/theme/auth_status 等 UI 相关元数据)
     provider = detect_provider(settings)
     bridge_manager = get_bridge_manager()
     app_state = AppStateStore(
@@ -322,6 +331,7 @@ async def build_runtime(
             keybindings=load_keybindings(),
         )
     )
+    # todo @Toby注释: [装配-步骤6] 创建 HookExecutor — 管理 PreToolUse/PostToolUse/Notification 等生命周期事件
     hook_reloader = HookReloader(get_config_file_path())
     hook_executor = HookExecutor(
         hook_reloader.current_registry() if api_client is None else load_hook_registry(settings, plugins),
@@ -331,6 +341,8 @@ async def build_runtime(
             default_model=settings.model,
         ),
     )
+
+    # todo @Toby注释: [装配-步骤7] 拼装 system_prompt — 注入 CLAUDE.md + 项目 skills + 记忆 + 安全规则
     engine_max_turns = settings.max_turns if (enforce_max_turns or max_turns is not None) else None
     system_prompt_text = build_runtime_system_prompt(
         settings,
@@ -365,6 +377,9 @@ async def build_runtime(
         for key, value in restore_tool_metadata.items():
             restored_metadata[key] = value
 
+    # todo @Toby注释: [装配-步骤8] 组装 QueryEngine — 整个 Harness 的心脏。
+    # 将所有构件(api_client + tool_registry + permission_checker + hook_executor + system_prompt)
+    # 注入引擎。后续调用 engine.submit_message(prompt) 即可启动 run_query 核心循环。
     engine = QueryEngine(
         api_client=resolved_api_client,
         tool_registry=tool_registry,
@@ -409,6 +424,9 @@ async def build_runtime(
 
         await start_docker_sandbox(settings, session_id, Path(cwd))
 
+    # todo @Toby注释: [装配-完成] 返回 RuntimeBundle — 包含所有运行时构件。
+    # 调用方拿到 bundle 后，调用 start_runtime(bundle) 初始化，然后
+    # bundle.engine.submit_message(prompt) 启动核心循环。
     return RuntimeBundle(
         api_client=resolved_api_client,
         cwd=cwd,

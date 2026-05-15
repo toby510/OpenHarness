@@ -635,6 +635,12 @@ async def run_query(
 ) -> AsyncIterator[tuple[StreamEvent, UsageSnapshot | None]]:
     """Run the conversation loop until the model stops requesting tools.
 
+    todo @Toby注释: run_query 是 Harness 的核心循环。每轮对话进来，先检查是否需要
+    compact(压缩历史)，然后调 stream_message 发给大模型。如果模型返回 text 就
+    yield 给上层渲染；如果模型返回 tool_use 就暂停并执行工具，把结果 append 回
+    messages，继续下一轮循环。循环结束条件：模型 stop_reason 不是 tool_use，
+    或达到 max_turns 上限。
+
     Auto-compaction is checked at the start of each turn.  When the
     estimated token count exceeds the model's auto-compact threshold,
     the engine first tries a cheap microcompact (clearing old tool result
@@ -695,6 +701,24 @@ async def run_query(
         last_compaction_result = await task
         return
 
+    # todo @Toby注释: [循环阶段1] 进入 Agent Loop。每一轮 = 调模型 → 看返回 → 如果是工具调用就执行 → 结果追加回对话 → 再来一轮
+    """"
+      while 循环:
+    1. 修正 token 上限（仅首次）
+    2. 自动压缩检查 → 消息太长就压缩
+    3. 图片预处理 → 非视觉模型转换图片为文本
+    4. 调用模型 API (stream_message)
+       ├─ 逐字文本 → yield 给 UI 打字机效果
+       ├─ 重试通知 → 告知用户
+       └─ 完成事件 → 拿到 final_message
+    5. 异常？
+       ├─ token 超限 → 降低上限，重试本轮
+       ├─ prompt 过长 → 紧急压缩，重试本轮
+       └─ 网络/其他 → 报错后 return
+    6. 空回复？→ 报错后 return
+    7. append 消息到历史，yield AssistantTurnComplete
+    → 进入阶段4（工具执行，你之前看的那段）
+    """
     turn_count = 0
     while context.max_turns is None or turn_count < context.max_turns:
         turn_count += 1
@@ -724,6 +748,9 @@ async def run_query(
         usage = UsageSnapshot()
 
         try:
+            # todo @Toby注释: [循环阶段2] 调用大模型 API，发送 messages + tools schema。
+            # stream_message 是异步生成器，流式返回 ApiTextDeltaEvent(逐字文本)
+            # 或 ApiMessageCompleteEvent(完整回复，包含 stop_reason 和 tool_use 列表)
             async for event in context.api_client.stream_message(
                 ApiMessageRequest(
                     model=context.model,
@@ -734,9 +761,11 @@ async def run_query(
                 )
             ):
                 if isinstance(event, ApiTextDeltaEvent):
+                    #todo @Toby注释:逐字文本增量——模型正在输出回复内容，每次 yield 一个 token 的文本。这是用户看到打字机效果的原因
                     yield AssistantTextDelta(text=event.text), None
                     continue
                 if isinstance(event, ApiRetryEvent):
+                    # todo @Toby注释:重试事件——API 调用失败，客户端正在自动重试，告知用户"正在第 X 次重试..."
                     yield StatusEvent(
                         message=(
                             f"Request failed; retrying in {event.delay_seconds:.1f}s "
@@ -746,10 +775,15 @@ async def run_query(
                     continue
 
                 if isinstance(event, ApiMessageCompleteEvent):
+                    # todo @Toby注释: [循环阶段3] 模型返回完整回复。stop_reason 决定是否继续循环：
+                    # end_turn → 退出循环，把最后一条消息 append 给上层渲染
+                    # tool_use → 进入阶段4，逐个执行工具调用
                     final_message = event.message
                     usage = event.usage
         except Exception as exc:
             error_msg = str(exc)
+            # todo @Toby注释: Token 限制错误（可恢复。模型拒绝了 max_tokens 参数（请求的值超过模型支持的上限）。修复方式：降到模型支持的上限，回退回合计数，重试本轮。turn_count -= 1
+            #   确保不计入额外回合。
             if _is_completion_token_limit_error(exc):
                 supported_limit = _extract_completion_token_limit(exc)
                 if supported_limit is not None and effective_max_tokens > supported_limit:
@@ -763,6 +797,8 @@ async def run_query(
                     ), None
                     turn_count = max(0, turn_count - 1)
                     continue
+
+            # todo @Toby注释:Prompt 过长错误（可恢复，紧急压缩）
             if not reactive_compact_attempted and _is_prompt_too_long_error(exc):
                 reactive_compact_attempted = True
                 yield StatusEvent(message=REACTIVE_COMPACT_STATUS_MESSAGE), None
@@ -773,6 +809,8 @@ async def run_query(
                     messages[:] = compacted_messages
                 if was_compacted:
                     continue
+
+            # todo @Toby注释:网络问题或未知错误 → 通知用户后 return 结束循环。
             if "connect" in error_msg.lower() or "timeout" in error_msg.lower() or "network" in error_msg.lower():
                 yield ErrorEvent(message=f"Network error: {error_msg}. Check your internet connection and try again."), None
             else:
@@ -796,14 +834,16 @@ async def run_query(
                 )
             ), usage
             return
-
+        # todo @Toby注释:完成本轮（阶段3结束）。将模型的完整回复追加到消息历史，然后 yield AssistantTurnComplete 通知上层"模型本轮思考完毕"。
         messages.append(final_message)
         yield AssistantTurnComplete(message=final_message, usage=usage), usage
 
         if coordinator_context_message is not None:
             messages.append(coordinator_context_message)
 
+        # todo @Toby注释: [循环阶段4-路由] 模型返回完成后，检查是否需要执行工具
         if not final_message.tool_uses:
+            # 没有工具调用 → 对话结束，触发 STOP hook 后正常返回
             if context.hook_executor is not None:
                 await context.hook_executor.execute(
                     HookEvent.STOP,
@@ -814,10 +854,12 @@ async def run_query(
                 )
             return
 
+        # todo @Toby注释: [循环阶段4-执行] 模型要求调用工具。逐个执行，然后
+        # 把结果 append 回 messages，循环回到阶段1让模型看到结果后继续。
         tool_calls = final_message.tool_uses
 
         if len(tool_calls) == 1:
-            # Single tool: sequential (stream events immediately)
+            # 单个工具：顺序执行，yield ToolExecutionStarted/Completed 给上层 UI
             tc = tool_calls[0]
             yield ToolExecutionStarted(tool_name=tc.name, tool_input=tc.input), None
             result = await _execute_tool_call(context, tc.name, tc.id, tc.input)
@@ -829,7 +871,7 @@ async def run_query(
             ), None
             tool_results = [result]
         else:
-            # Multiple tools: execute concurrently, emit events after
+            # 多个工具：并发执行(return_exceptions=True 保证单个失败不拖垮其他)
             for tc in tool_calls:
                 yield ToolExecutionStarted(tool_name=tc.name, tool_input=tc.input), None
 
@@ -867,6 +909,8 @@ async def run_query(
                     metadata=result.result_metadata,
                 ), None
 
+        # todo @Toby注释: [循环阶段4-反馈] 工具结果以 user 角色 append 回 messages，
+        # 然后 while 循环回到阶段1 — 模型会看到工具结果，决定下一步（继续工具调用 or 最终回复）
         messages.append(ConversationMessage(role="user", content=tool_results))
 
     if context.max_turns is not None:
@@ -880,6 +924,7 @@ async def _execute_tool_call(
     tool_use_id: str,
     tool_input: dict[str, object],
 ) -> ToolResultBlock:
+    # todo @Toby注释: [工具执行-步骤1] PreToolUse Hook：在执行前让插件/安全策略介入，可阻断执行
     if context.hook_executor is not None:
         pre_hooks = await context.hook_executor.execute(
             HookEvent.PRE_TOOL_USE,
@@ -920,6 +965,8 @@ async def _execute_tool_call(
     _command = _extract_permission_command(tool_input, parsed_input)
     log.debug("permission check: %s read_only=%s path=%s cmd=%s",
               tool_name, tool.is_read_only(parsed_input), _file_path, _command and _command[:80])
+    # todo @Toby注释: [工具执行-步骤2] 权限检查：根据工具名 + 是否只读 + 文件路径 + 命令
+    # 决定 allow(允许) / deny(拒绝) / requires_confirmation(弹出确认框)
     decision = context.permission_checker.evaluate(
         tool_name,
         is_read_only=tool.is_read_only(parsed_input),
@@ -927,6 +974,7 @@ async def _execute_tool_call(
         command=_command,
     )
     if not decision.allowed:
+        # todo @Toby注释: [工具执行-步骤2.1] 工具拒绝情况下，如果配置了征询用户意见，则根据用户是否同意来做决定
         if decision.requires_confirmation and context.permission_prompt is not None:
             log.debug("permission prompt for %s: %s", tool_name, decision.reason)
             if context.hook_executor is not None:
@@ -940,6 +988,7 @@ async def _execute_tool_call(
                     },
                 )
             confirmed = await context.permission_prompt(tool_name, decision.reason)
+            # todo @Toby注释: [工具执行-步骤2.2] 用户拒绝
             if not confirmed:
                 log.debug("permission denied by user for %s", tool_name)
                 return ToolResultBlock(
@@ -955,6 +1004,8 @@ async def _execute_tool_call(
                 is_error=True,
             )
 
+    # todo @Toby注释: [工具执行-步骤3] 权限通过后，真正调用工具的 execute() 方法。
+    # 传入 parsed_input(Pydantic校验后的参数) + ToolExecutionContext(cwd/hooks/元数据)
     log.debug("executing %s ...", tool_name)
     t0 = time.monotonic()
     result = await tool.execute(
