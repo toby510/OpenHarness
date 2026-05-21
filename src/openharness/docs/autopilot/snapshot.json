@@ -1,0 +1,191 @@
+{
+  "generated_at": 1779108513.014509,
+  "repo_name": "openharness",
+  "repo_path": "/Users/longxuebin/ai_project_reposity/pthon/OpenHarness/src/openharness",
+  "focus": null,
+  "counts": {
+    "queued": 0,
+    "accepted": 0,
+    "preparing": 0,
+    "running": 0,
+    "verifying": 0,
+    "pr_open": 0,
+    "waiting_ci": 0,
+    "repairing": 0,
+    "completed": 0,
+    "merged": 0,
+    "failed": 1,
+    "rejected": 0,
+    "superseded": 0
+  },
+  "status_order": [
+    "queued",
+    "accepted",
+    "preparing",
+    "running",
+    "verifying",
+    "pr_open",
+    "waiting_ci",
+    "repairing",
+    "completed",
+    "merged",
+    "failed",
+    "rejected",
+    "superseded"
+  ],
+  "columns": {
+    "queued": [],
+    "accepted": [],
+    "preparing": [],
+    "running": [],
+    "verifying": [],
+    "pr_open": [],
+    "waiting_ci": [],
+    "repairing": [],
+    "completed": [],
+    "merged": [],
+    "failed": [
+      {
+        "id": "ap-70cc8e2c",
+        "title": "Fix NoneType crash in get_user_display_name",
+        "body": "When user is None, the function crashes with TypeError: 'NoneType' object is not subscriptable. Add a null check at the start: if user is None, return 'Anonymous'.",
+        "status": "failed",
+        "source_kind": "manual_idea",
+        "source_ref": "",
+        "score": 100,
+        "score_reasons": [
+          "source=manual_idea",
+          "direct user-driven input",
+          "recently updated"
+        ],
+        "labels": [],
+        "created_at": 1779108355.674643,
+        "updated_at": 1779108513.0118232,
+        "metadata": {
+          "last_note": "agent execution failed: Exceeded maximum turn limit (12)",
+          "url": "",
+          "execution_model": "",
+          "assistant_summary_preview": "",
+          "human_gate_pending": false,
+          "verification_failed": false,
+          "attempt_count": 1,
+          "max_attempts": 3,
+          "linked_pr_number": null,
+          "linked_pr_url": "",
+          "last_ci_conclusion": "",
+          "last_ci_summary": "",
+          "last_failure_stage": "agent_runtime_error",
+          "last_failure_summary": "agent execution failed: Exceeded maximum turn limit (12)",
+          "verification_steps": []
+        }
+      }
+    ],
+    "rejected": [],
+    "superseded": []
+  },
+  "cards": [
+    {
+      "id": "ap-70cc8e2c",
+      "title": "Fix NoneType crash in get_user_display_name",
+      "body": "When user is None, the function crashes with TypeError: 'NoneType' object is not subscriptable. Add a null check at the start: if user is None, return 'Anonymous'.",
+      "status": "failed",
+      "source_kind": "manual_idea",
+      "source_ref": "",
+      "score": 100,
+      "score_reasons": [
+        "source=manual_idea",
+        "direct user-driven input",
+        "recently updated"
+      ],
+      "labels": [],
+      "created_at": 1779108355.674643,
+      "updated_at": 1779108513.0118232,
+      "metadata": {
+        "last_note": "agent execution failed: Exceeded maximum turn limit (12)",
+        "url": "",
+        "execution_model": "",
+        "assistant_summary_preview": "",
+        "human_gate_pending": false,
+        "verification_failed": false,
+        "attempt_count": 1,
+        "max_attempts": 3,
+        "linked_pr_number": null,
+        "linked_pr_url": "",
+        "last_ci_conclusion": "",
+        "last_ci_summary": "",
+        "last_failure_stage": "agent_runtime_error",
+        "last_failure_summary": "agent execution failed: Exceeded maximum turn limit (12)",
+        "verification_steps": []
+      }
+    }
+  ],
+  "journal": [
+    {
+      "timestamp": 1779108355.675489,
+      "kind": "intake_added",
+      "summary": "Queued manual_idea: Fix NoneType crash in get_user_display_name",
+      "task_id": "ap-70cc8e2c",
+      "metadata": {
+        "source_ref": "",
+        "score": 100
+      }
+    },
+    {
+      "timestamp": 1779108386.945924,
+      "kind": "intake_refresh",
+      "summary": "Refreshed intake card ap-70cc8e2c: Fix NoneType crash in get_user_display_name",
+      "task_id": "ap-70cc8e2c",
+      "metadata": {
+        "source_kind": "manual_idea",
+        "source_ref": ""
+      }
+    },
+    {
+      "timestamp": 1779108387.110354,
+      "kind": "status_preparing",
+      "summary": "preparing: Fix NoneType crash in get_user_display_name (preparing isolated worktree)",
+      "task_id": "ap-70cc8e2c",
+      "metadata": {}
+    },
+    {
+      "timestamp": 1779108392.654419,
+      "kind": "status_running",
+      "summary": "running: Fix NoneType crash in get_user_display_name (autopilot execution started)",
+      "task_id": "ap-70cc8e2c",
+      "metadata": {}
+    },
+    {
+      "timestamp": 1779108445.704428,
+      "kind": "status_failed",
+      "summary": "failed: Fix NoneType crash in get_user_display_name (agent execution failed: Exceeded maximum turn limit (12))",
+      "task_id": "ap-70cc8e2c",
+      "metadata": {}
+    },
+    {
+      "timestamp": 1779108445.707,
+      "kind": "run_failed",
+      "summary": "Fix NoneType crash in get_user_display_name: agent execution failed",
+      "task_id": "ap-70cc8e2c",
+      "metadata": {
+        "error": "Exceeded maximum turn limit (12)",
+        "attempt_count": 1
+      }
+    },
+    {
+      "timestamp": 1779108513.013333,
+      "kind": "intake_refresh",
+      "summary": "Refreshed intake card ap-70cc8e2c: Fix NoneType crash in get_user_display_name",
+      "task_id": "ap-70cc8e2c",
+      "metadata": {
+        "source_kind": "manual_idea",
+        "source_ref": ""
+      }
+    }
+  ],
+  "policies": {
+    "autopilot": "/Users/longxuebin/ai_project_reposity/pthon/OpenHarness/src/openharness/.openharness/autopilot/autopilot_policy.yaml",
+    "verification": "/Users/longxuebin/ai_project_reposity/pthon/OpenHarness/src/openharness/.openharness/autopilot/verification_policy.yaml",
+    "release": "/Users/longxuebin/ai_project_reposity/pthon/OpenHarness/src/openharness/.openharness/autopilot/release_policy.yaml"
+  },
+  "active_context": "# Active Repo Context\n\nGenerated at: 2026-05-18 12:48:33 UTC\n\n## Current Task Focus\n- No active repo task focus yet.\n\n## In Progress\n- None.\n\n## Next Up\n- No queued items.\n\n## Recently Completed\n- None yet.\n\n## Recent Failures\n- [failed] ap-70cc8e2c Fix NoneType crash in get_user_display_name\n\n## Recent Repo Journal\n- 05-18 12:45 intake_added: Queued manual_idea: Fix NoneType crash in get_user_display_name\n- 05-18 12:46 intake_refresh: Refreshed intake card ap-70cc8e2c: Fix NoneType crash in get_user_display_name\n- 05-18 12:46 status_preparing: preparing: Fix NoneType crash in get_user_display_name (preparing isolated worktree)\n- 05-18 12:46 status_running: running: Fix NoneType crash in get_user_display_name (autopilot execution started)\n- 05-18 12:47 status_failed: failed: Fix NoneType crash in get_user_display_name (agent execution failed: Exceeded maximum turn limit (12))\n- 05-18 12:47 run_failed: Fix NoneType crash in get_user_display_name: agent execution failed\n- 05-18 12:48 intake_refresh: Refreshed intake card ap-70cc8e2c: Fix NoneType crash in get_user_display_name\n\n## Policies\n- Autopilot: /Users/longxuebin/ai_project_reposity/pthon/OpenHarness/src/openharness/.openharness/autopilot/autopilot_policy.yaml\n- Verification: /Users/longxuebin/ai_project_reposity/pthon/OpenHarness/src/openharness/.openharness/autopilot/verification_policy.yaml\n- Release: /Users/longxuebin/ai_project_reposity/pthon/OpenHarness/src/openharness/.openharness/autopilot/release_policy.yaml"
+}

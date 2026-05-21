@@ -1,0 +1,154 @@
+{
+  "generated_at": 1779077099.8769972,
+  "repo_name": "autopilot",
+  "repo_path": "/Users/longxuebin/ai_project_reposity/pthon/OpenHarness/src/openharness/autopilot",
+  "focus": null,
+  "counts": {
+    "queued": 0,
+    "accepted": 0,
+    "preparing": 0,
+    "running": 0,
+    "verifying": 0,
+    "pr_open": 0,
+    "waiting_ci": 0,
+    "repairing": 0,
+    "completed": 0,
+    "merged": 0,
+    "failed": 1,
+    "rejected": 0,
+    "superseded": 0
+  },
+  "status_order": [
+    "queued",
+    "accepted",
+    "preparing",
+    "running",
+    "verifying",
+    "pr_open",
+    "waiting_ci",
+    "repairing",
+    "completed",
+    "merged",
+    "failed",
+    "rejected",
+    "superseded"
+  ],
+  "columns": {
+    "queued": [],
+    "accepted": [],
+    "preparing": [],
+    "running": [],
+    "verifying": [],
+    "pr_open": [],
+    "waiting_ci": [],
+    "repairing": [],
+    "completed": [],
+    "merged": [],
+    "failed": [
+      {
+        "id": "ap-0250b3e8",
+        "title": "Fix NoneType crash in get_user_display_name",
+        "body": "When user is None, the function crashes with \"TypeError: 'NoneType'\r   object is not subscriptable\". Add a null check at the start: if user is None, return \"Anonymous\". Keep existing behavior for normal\r  users.",
+        "status": "failed",
+        "source_kind": "manual_idea",
+        "source_ref": "",
+        "score": 100,
+        "score_reasons": [
+          "source=manual_idea",
+          "direct user-driven input",
+          "recently updated"
+        ],
+        "labels": [],
+        "created_at": 1779077011.956428,
+        "updated_at": 1779077099.873565,
+        "metadata": {
+          "last_note": "Failed to prepare worktree branch: fatal: unable to access 'https://github.com/HKUDS/OpenHarness.git/': Failed to connect to github.com port 443 after 75036 ms: Couldn't connect to server",
+          "url": "",
+          "execution_model": "",
+          "assistant_summary_preview": "",
+          "human_gate_pending": false,
+          "verification_failed": false,
+          "attempt_count": 0,
+          "max_attempts": 3,
+          "linked_pr_number": null,
+          "linked_pr_url": "",
+          "last_ci_conclusion": "",
+          "last_ci_summary": "",
+          "last_failure_stage": "git_prepare_failed",
+          "last_failure_summary": "Failed to prepare worktree branch: fatal: unable to access 'https://github.com/HKUDS/OpenHarness.git/': Failed to connect to github.com port 443 after 75036 ms: Couldn't connect to server",
+          "verification_steps": []
+        }
+      }
+    ],
+    "rejected": [],
+    "superseded": []
+  },
+  "cards": [
+    {
+      "id": "ap-0250b3e8",
+      "title": "Fix NoneType crash in get_user_display_name",
+      "body": "When user is None, the function crashes with \"TypeError: 'NoneType'\r   object is not subscriptable\". Add a null check at the start: if user is None, return \"Anonymous\". Keep existing behavior for normal\r  users.",
+      "status": "failed",
+      "source_kind": "manual_idea",
+      "source_ref": "",
+      "score": 100,
+      "score_reasons": [
+        "source=manual_idea",
+        "direct user-driven input",
+        "recently updated"
+      ],
+      "labels": [],
+      "created_at": 1779077011.956428,
+      "updated_at": 1779077099.873565,
+      "metadata": {
+        "last_note": "Failed to prepare worktree branch: fatal: unable to access 'https://github.com/HKUDS/OpenHarness.git/': Failed to connect to github.com port 443 after 75036 ms: Couldn't connect to server",
+        "url": "",
+        "execution_model": "",
+        "assistant_summary_preview": "",
+        "human_gate_pending": false,
+        "verification_failed": false,
+        "attempt_count": 0,
+        "max_attempts": 3,
+        "linked_pr_number": null,
+        "linked_pr_url": "",
+        "last_ci_conclusion": "",
+        "last_ci_summary": "",
+        "last_failure_stage": "git_prepare_failed",
+        "last_failure_summary": "Failed to prepare worktree branch: fatal: unable to access 'https://github.com/HKUDS/OpenHarness.git/': Failed to connect to github.com port 443 after 75036 ms: Couldn't connect to server",
+        "verification_steps": []
+      }
+    }
+  ],
+  "journal": [
+    {
+      "timestamp": 1779077011.957164,
+      "kind": "intake_added",
+      "summary": "Queued manual_idea: Fix NoneType crash in get_user_display_name",
+      "task_id": "ap-0250b3e8",
+      "metadata": {
+        "source_ref": "",
+        "score": 100
+      }
+    },
+    {
+      "timestamp": 1779077024.7755678,
+      "kind": "status_preparing",
+      "summary": "preparing: Fix NoneType crash in get_user_display_name (preparing isolated worktree)",
+      "task_id": "ap-0250b3e8",
+      "metadata": {}
+    },
+    {
+      "timestamp": 1779077099.87536,
+      "kind": "status_failed",
+      "summary": "failed: Fix NoneType crash in get_user_display_name (Failed to prepare worktree branch: fatal: unable to access 'https://github.co...)",
+      "task_id": "ap-0250b3e8",
+      "metadata": {}
+    }
+  ],
+  "policies": {
+    "autopilot": "/Users/longxuebin/ai_project_reposity/pthon/OpenHarness/src/openharness/autopilot/.openharness/autopilot/autopilot_policy.yaml",
+    "verification": "/Users/longxuebin/ai_project_reposity/pthon/OpenHarness/src/openharness/autopilot/.openharness/autopilot/verification_policy.yaml",
+    "release": "/Users/longxuebin/ai_project_reposity/pthon/OpenHarness/src/openharness/autopilot/.openharness/autopilot/release_policy.yaml"
+  },
+  "active_context": "# Active Repo Context\n\nGenerated at: 2026-05-18 04:04:59 UTC\n\n## Current Task Focus\n- No active repo task focus yet.\n\n## In Progress\n- None.\n\n## Next Up\n- No queued items.\n\n## Recently Completed\n- None yet.\n\n## Recent Failures\n- [failed] ap-0250b3e8 Fix NoneType crash in get_user_display_name\n\n## Recent Repo Journal\n- 05-18 04:03 intake_added: Queued manual_idea: Fix NoneType crash in get_user_display_name\n- 05-18 04:03 status_preparing: preparing: Fix NoneType crash in get_user_display_name (preparing isolated worktree)\n- 05-18 04:04 status_failed: failed: Fix NoneType crash in get_user_display_name (Failed to prepare worktree branch: fatal: unable to access 'https://github.co...)\n\n## Policies\n- Autopilot: /Users/longxuebin/ai_project_reposity/pthon/OpenHarness/src/openharness/autopilot/.openharness/autopilot/autopilot_policy.yaml\n- Verification: /Users/longxuebin/ai_project_reposity/pthon/OpenHarness/src/openharness/autopilot/.openharness/autopilot/verification_policy.yaml\n- Release: /Users/longxuebin/ai_project_reposity/pthon/OpenHarness/src/openharness/autopilot/.openharness/autopilot/release_policy.yaml"
+}
