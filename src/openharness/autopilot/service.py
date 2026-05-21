@@ -652,9 +652,15 @@ class RepoAutopilotStore:
         card = self.get_card(card_id)
         if card is None:
             raise ValueError(f"No autopilot card found with ID: {card_id}")
+        # todo @Toby注释: 状态机互斥保护：一个 card 同时只能在一个状态流转，
+        # 防止用户重复触发或并发执行导致 worktree/git 状态混乱
         if card.status in {"preparing", "running", "verifying", "waiting_ci", "repairing"}:
             raise ValueError(f"Autopilot card {card.id} is already active.")
 
+        # todo @Toby注释: [策略加载] 从项目根目录读取两个 YAML 配置文件：
+        #   - .openharness/autopilot_policy.yaml: 控制 Agent 行为（max_turns, permission_mode）
+        #   - .openharness/verification_policy.yaml: 控制验证命令（pytest, ruff, mypy）
+        # 策略与代码分离，不同项目可配置不同的验证标准
         policies = self.load_policies()
         execution = dict(policies.get("autopilot", {}).get("execution", {}))
         effective_model = model or _safe_text(execution.get("default_model")) or None
@@ -669,9 +675,16 @@ class RepoAutopilotStore:
         linked_pr_number = self._linked_pr_number(card)
         use_worktree = bool(execution.get("use_worktree", True)) and self._is_git_repo(self._cwd)
 
+        # todo @Toby注释: [GitHub PR 关联] 如果 card 来自 github_pr 且已关联现有 PR，
+        # 不走完整执行流，直接进入 CI 监控模式（复用已有 PR 的代码）
         if card.source_kind == "github_pr" and linked_pr_number is not None and not card.metadata.get("autopilot_managed"):
             return await self._process_existing_pr_card(card, linked_pr_number, policies)
 
+        # todo @Toby注释: [环境隔离] 创建 git worktree，在隔离分支上执行所有代码修改。
+        # 好处：
+        #   1. 失败时不污染主分支（worktree 可直接删除）
+        #   2. 多任务并行时互不干扰（每个 card 一个 worktree）
+        #   3. 天然支持 git diff 检查变更量
         worktree_manager = WorktreeManager()
         worktree_info = None
         working_cwd = self._cwd
@@ -709,12 +722,17 @@ class RepoAutopilotStore:
         prior_failure_stage = _safe_text(card.metadata.get("last_failure_stage"))
         prior_failure_summary = _safe_text(card.metadata.get("last_failure_summary"))
 
+        # todo @Toby注释: [核心循环] 执行-验证-修复闭环。最多 max_attempts 轮（默认3轮）。
+        # 设计思想：不是"一次对话就交付"，而是"产出代码 → 跑验证 → 不通过就修复"的迭代。
+        # 每一轮都是完整的 Agent 调用 + 验证，不是对话轮次的追加。
         for attempt_count in range(existing_attempts + 1, max_attempts + 1):
             attempt_run_report = self._runs_dir / f"{card.id}-attempt-{attempt_count:02d}-run.md"
             attempt_verification_report = self._runs_dir / f"{card.id}-attempt-{attempt_count:02d}-verification.md"
             is_first_attempt = attempt_count == 1 and existing_attempts == 0
             if use_worktree:
                 try:
+                    # todo @Toby注释: [worktree 同步] 第一轮用 reset（从 base 全新开始），
+                    # 后续轮次保留当前分支状态（Agent 可能已有部分修改，在此基础上修复）
                     self._sync_worktree_to_base(
                         working_cwd,
                         base_branch=base_branch,
@@ -739,12 +757,18 @@ class RepoAutopilotStore:
                         worktree_path=str(working_cwd),
                     )
 
+            # todo @Toby注释: [状态切换] 第1轮是 running，第2轮起是 repairing。
+            # 状态差异影响 prompt 组装（_prepare_repair_prompt 会附加失败上下文）
             self.update_status(
                 card.id,
                 status="repairing" if attempt_count > 1 else "running",
                 note="repairing failed run" if attempt_count > 1 else "autopilot execution started",
                 metadata_updates={"attempt_count": attempt_count},
             )
+            # todo @Toby注释: [Prompt 组装] 核心：如何把"任务需求 + 历史失败信息"告诉 Agent。
+            # 第1轮：正常任务描述 + autopilot policy + verification policy
+            # 第2轮+：额外附加 "上一轮 pytest 失败，2 tests failed，请修复"
+            # 这是验证结果反馈给 Agent 的关键通道
             prompt = self._prepare_repair_prompt(
                 card,
                 policies,
@@ -754,6 +778,10 @@ class RepoAutopilotStore:
                 failure_summary=prior_failure_summary,
             )
             try:
+                # todo @Toby注释: [Agent 执行] _run_agent_prompt 是 Engine 层的入口。
+                # 内部走：build_runtime → start_runtime → submit_message → run_query (LLM 循环)。
+                # permission_mode="full_auto" 表示工具调用无需人工确认（因为已在隔离 worktree 中）。
+                # 返回值是 Agent 的文本摘要（如 "I fixed auth.py by..."），不是结构化数据。
                 assistant_summary = await self._run_agent_prompt(
                     prompt,
                     model=effective_model,
@@ -762,6 +790,8 @@ class RepoAutopilotStore:
                     cwd=working_cwd,
                 )
             except Exception as exc:
+                # todo @Toby注释: [Agent 异常] Agent 执行过程中抛异常（如模型 API 失败、工具执行崩溃）。
+                # 写入失败报告，标记 card 为 failed，不再重试（这是基础设施问题，不是代码质量问题）。
                 failure_text = self._render_run_report(
                     card,
                     agent_summary=f"Autopilot execution failed: {exc}",
@@ -800,6 +830,8 @@ class RepoAutopilotStore:
                     worktree_path=str(working_cwd),
                 )
 
+            # todo @Toby注释: [运行报告] 将 Agent 的文本回复写入 Markdown 报告。
+            # 这是给人看的审计日志，不是给机器解析的。报告路径后续会附加到 PR 描述中。
             pending_report = self._render_run_report(
                 card,
                 agent_summary=assistant_summary,
@@ -815,18 +847,34 @@ class RepoAutopilotStore:
                 metadata={"run_report_path": str(attempt_run_report), "attempt_count": attempt_count},
             )
 
+            # todo @Toby注释: [状态切换: verifying] 从 running 切换到 verifying，
+            # 明确区分"Agent 正在写代码"和"正在检查代码质量"两个阶段。
+            # 这个状态会显示在 /autopilot status 中，让用户知道当前在跑验证。
             self.update_status(
                 card.id,
                 status="verifying",
                 note="running verification gates",
                 metadata_updates={"assistant_summary_preview": _shorten(assistant_summary, limit=300)},
             )
+            # todo @Toby注释: ★ [验证执行] 核心验证逻辑。读取 verification_policy.yaml 中的 commands 列表，
+            # 在 worktree 中逐个执行。返回值是 RepoVerificationStep 列表，每个 step 包含：
+            #   - command: 执行的命令字符串
+            #   - returncode: 进程返回码（0=成功，非0=失败）
+            #   - status: "success" | "failed" | "error"
+            #   - stdout/stderr: 输出内容（截断到4000字符，防止过大）
+            # 验证的是 Agent 产出的**代码文件**，不是 Agent 的文本回复。
             verification_steps = self._run_verification_steps(policies, cwd=working_cwd)
+            # todo @Toby注释: [验证报告] 将验证结果写入 Markdown，格式类似 CI 报告，
+            # 每条命令一行，显示 ✓/✗ 和输出摘要。
             verification_text = self._render_verification_report(card, verification_steps)
             for path in (attempt_verification_report, current_verification_report):
                 atomic_write_text(path, verification_text)
 
+            # todo @Toby注释: [失败判定] 过滤出 status 为 failed 或 error 的步骤。
+            # 只要有一条命令失败，整轮验证就视为失败。
             failing = [step for step in verification_steps if step.status in {"failed", "error"}]
+            # todo @Toby注释: [完整报告渲染] 将 Agent 摘要 + 验证结果合并为最终报告，
+            # verification_status="failed" 或 "passed" 会显示在报告头部。
             final_local_report = self._render_run_report(
                 card,
                 agent_summary=assistant_summary,
@@ -835,9 +883,11 @@ class RepoAutopilotStore:
             )
             for path in (attempt_run_report, current_run_report):
                 atomic_write_text(path, final_local_report)
-            prior_summary = assistant_summary
+            prior_summary = assistant_summary  # 保存给下一轮作为上下文
 
             if failing:
+                # todo @Toby注释: [失败摘要] 取前3条失败命令，格式: "pytest -q rc=1; mypy rc=2"
+                # 这个摘要会被写入 metadata，也会出现在 _prepare_repair_prompt 的修复上下文中。
                 summary = "; ".join(f"{step.command} rc={step.returncode}" for step in failing[:3])
                 metadata_updates = {
                     "verification_failed": True,
@@ -845,6 +895,10 @@ class RepoAutopilotStore:
                     "last_failure_stage": "local_verification_failed",
                     "last_failure_summary": summary,
                 }
+                # todo @Toby注释: [修复决策] 关键分支：
+                #   - 还有重试次数 → 状态切为 repairing，记录失败原因，continue 回到 for 循环顶部
+                #   - 次数用完 → 状态切为 failed，返回失败结果
+                # continue 时，下一轮 _prepare_repair_prompt 会把 failure_summary 塞进 prompt
                 if attempt_count < max_attempts:
                     self.update_status(
                         card.id,
@@ -860,6 +914,8 @@ class RepoAutopilotStore:
                     )
                     if issue_number is not None:
                         self._comment_on_issue(issue_number, self._comment_local_failed(attempt_count, summary))
+                    # todo @Toby注释: [保存失败上下文] 这两个变量会被下一轮 _prepare_repair_prompt 读取，
+                    # 生成包含失败信息的修复 prompt。这是"验证驱动修复"的核心闭环。
                     prior_failure_stage = "local_verification_failed"
                     prior_failure_summary = summary
                     continue
@@ -888,6 +944,8 @@ class RepoAutopilotStore:
                     worktree_path=str(working_cwd),
                 )
 
+            # todo @Toby注释: [git 检查] 如果不是 git 仓库（如纯本地项目），验证通过后直接 completed，
+            # 跳过 GitHub 自动化流程。human_gate_pending=True 提示需要人工手动合并。
             if not self._is_git_repo(working_cwd):
                 self.update_status(
                     card.id,
@@ -910,17 +968,28 @@ class RepoAutopilotStore:
                     worktree_path=str(working_cwd),
                 )
 
+            # todo @Toby注释: [代码提交] 将 worktree 中所有变更自动提交。
+            # commit message 格式: "autopilot(task-001): fix login bug"
             commit_created = self._git_commit_all(
                 working_cwd,
                 f"autopilot({card.id}): {card.title}",
             )
+            # todo @Toby注释: [变更检测] 两种情况视为"有进度"：
+            #   1. 本次 commit 有文件变更（commit_created=True）
+            #   2. 分支本身已有历史变更（可能是上一轮留下的）
+            # 如果 Agent 什么都没改（连空 commit 都没有），视为无效执行，需要重试。
             branch_has_progress = commit_created or self._git_branch_has_progress(
                 working_cwd,
                 base_branch=base_branch,
             )
             if not branch_has_progress:
+                # todo @Toby注释: [第3层验证：变更验证] 检查 Agent 是否实际修改了代码文件。
+                # 只说话不改代码 → no_changes → 同样进入 repairing 重试。
+                # 这是"验证结果是符合预期的"的补充：有 lint 通过还不够，必须有实际变更。
                 no_changes_summary = "Agent produced no code changes to commit."
                 if attempt_count < max_attempts:
+                    # todo @Toby注释: 没有代码变更也走 repairing 重试，但 failure_stage="no_changes"，
+                    # prompt 会提示 Agent "请确保实际修改代码文件"
                     self.update_status(
                         card.id,
                         status="repairing",
@@ -960,6 +1029,8 @@ class RepoAutopilotStore:
                     metadata={"attempt_count": attempt_count, "head_branch": head_branch},
                 )
 
+            # todo @Toby注释: [推送与 PR] push 分支到远程，创建或更新 PR。
+            # PR 描述会自动附加 run_report 和 verification_report 的链接。
             try:
                 self._git_push_branch(working_cwd, head_branch)
                 pr_info = self._upsert_pull_request(
@@ -992,6 +1063,8 @@ class RepoAutopilotStore:
 
             linked_pr_number = int(pr_info.get("number"))
             pr_url = _safe_text(pr_info.get("url"))
+            # todo @Toby注释: [远程 CI 等待] 状态切为 waiting_ci，记录 PR 信息到 metadata。
+            # 这是第4层验证：本地验证通过不代表远程 CI 通过（环境差异、依赖版本等）。
             self.update_status(
                 card.id,
                 status="waiting_ci",
@@ -1007,6 +1080,8 @@ class RepoAutopilotStore:
             )
             self._comment_on_pr(linked_pr_number, self._comment_pr_opened(linked_pr_number, pr_url))
 
+            # todo @Toby注释: [CI 轮询] 轮询间隔 20s（ci_poll_interval_seconds），最长 30分钟（ci_timeout_seconds）。
+            # 返回 ci_state ∈ {"passed", "failed", "pending", "no_checks"}
             ci_state, ci_summary, pr_snapshot, checks = await self._wait_for_pr_ci(linked_pr_number, policies)
             self.update_status(
                 card.id,
@@ -1021,6 +1096,8 @@ class RepoAutopilotStore:
                 },
             )
             if ci_state == "failed":
+                # todo @Toby注释: [CI 失败也重试] 远程 CI 失败（如测试在 Linux CI 上挂了但在本地通过了），
+                # 同样进入 repairing 循环。failure_stage="remote_ci_failed" 会让 Agent 知道是 CI 环境问题。
                 if attempt_count < max_attempts:
                     self.update_status(
                         card.id,
@@ -1067,6 +1144,10 @@ class RepoAutopilotStore:
                     pr_url=pr_url,
                 )
 
+            # todo @Toby注释: [合并决策] CI 通过后检查是否满足 auto-merge 条件：
+            #   - PR 必须有 "autopilot:merge" label（label_gated 模式）
+            #   - 或配置为无条件自动合并（mode=always）
+            # 满足则自动 merge，不满足则标记 completed 等待人工审批（human gate）
             if self._automerge_eligible(pr_snapshot, policies):
                 self._merge_pull_request(linked_pr_number)
                 self.update_status(
@@ -2010,6 +2091,16 @@ class RepoAutopilotStore:
             return dict(default)
         return payload
 
+    # todo @Toby注释: [Execution Prompt 组装] 这是告诉 Agent"要做什么"的核心 prompt。
+    # 结构：
+    #   1. Goal → 最小化修改、自己跑验证、不 merge、保持可审查状态
+    #   2. 任务卡片 → id/source/title/body（含用户描述的问题细节）
+    #   3. Autopilot policy → max_turns、permission_mode 等执行约束
+    #   4. Verification policy → 验证命令列表，Agent 能看到"完成后会被什么标准检查"
+    #   5. Expected output → 变更说明、验证结果、剩余风险
+    # 注意：prompt 要求 Agent "Run verification commands yourself"（建议性），
+    # 但 run_card 在 Agent 停止后会**强制**再跑一遍 _run_verification_steps（强制执行）。
+    # 测试用例不是 Agent 自动写的——pytest 执行的是项目中已有的测试。
     def _build_execution_prompt(self, card: RepoTaskCard, policies: dict[str, Any]) -> str:
         autopilot_policy = yaml.safe_dump(policies["autopilot"], sort_keys=False).strip()
         verification_policy = yaml.safe_dump(policies["verification"], sort_keys=False).strip()
@@ -2091,8 +2182,18 @@ class RepoAutopilotStore:
                 selected.append(cmd)
         return selected
 
+    # todo @Toby注释: [验证执行引擎] 把 verification_policy.yaml 中的 commands 逐个执行。
+    # 每个命令在 worktree 中通过 subprocess.run() 执行，返回 RepoVerificationStep:
+    #   success: returncode=0 → 验证通过
+    #   failed:  returncode≠0 → 验证失败（会触发 repair 循环）
+    #   error:   文件找不到/超时/异常 → 配置问题，同样算失败
+    # 输出的 stdout/stderr 截断到4000字符，前端展示不会炸。
     def _run_verification_steps(self, policies: dict[str, Any], *, cwd: Path | None = None) -> list[RepoVerificationStep]:
         steps: list[RepoVerificationStep] = []
+        # todo @Toby注释: [命令解析] 支持两种格式：
+        #   字符串: "uv run pytest -q" → 自动推断 shell=True/False
+        #   dict:   {"command": "...", "shell": true} → 精确控制
+        # _verification_commands() 还会检查命令的可执行性（_looks_available），不可执行的跳过
         for cmd in self._verification_commands(policies):
             if cmd.error is not None:
                 steps.append(
@@ -2106,6 +2207,11 @@ class RepoAutopilotStore:
                 continue
             target: str | list[str] = cmd.raw if cmd.shell else list(cmd.argv)
             try:
+                # todo @Toby注释: [子进程执行] subprocess.run 在 worktree 中执行验证命令。
+                # shell=True: 直接传字符串（支持管道/重定向等 shell 语法）
+                # shell=False: 传 argv 列表（安全，防 shell 注入）
+                # timeout=1800（30分钟），capture_output=True 捕获 stdout/stderr
+                # check=False: 不抛异常，根据 returncode 自行判断成功/失败
                 completed = subprocess.run(
                     target,
                     cwd=cwd or self._cwd,

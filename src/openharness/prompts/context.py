@@ -99,6 +99,21 @@ def build_runtime_system_prompt(
             "# Session Mode\nFast mode is enabled. Prefer concise replies, minimal tool use, and quicker progress over exhaustive exploration."
         )
 
+
+    """
+    20:34Claude responded: 这是给 AI 的推理强度配置指令，告诉模型在回答时该花多少"力气"思考。这是给 AI 的推理强度配置指令，告诉模型在回答时该花多少"力气"思考。
+    Effort: medium（努力程度：中等）
+    控制思考深度。有三档：
+    
+    low — 快速回答，浅层推理
+    medium — 适中深度，平衡速度与质量
+    high — 深度推理，更慢但更严谨
+    
+    Passes: 1（推理轮次：1次）
+    控制内部迭代次数。1 表示想一遍就给答案，不反复自我检查和修正。2+ 则会多轮推敲。
+    Adjust depth and iteration count to match these settings
+    要求模型根据以上配置自我调节——既不过度分析浪费资源，也不敷衍了事。
+    """
     sections.append(
         "# Reasoning Settings\n"
         f"- Effort: {settings.effort}\n"

@@ -4,8 +4,22 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import importlib.util as _importlib_util
+import sys as _sys
 from contextlib import AsyncExitStack
 from typing import Any
+
+# Guard against import name collision: when running a script directly from
+# within src/openharness/ (e.g. `python src/openharness/my_debug_demo.py`),
+# Python adds that directory to sys.path[0], which causes openharness/mcp/
+# to shadow the standalone 'mcp' SDK package.  Detect & fix.
+_mcp_spec = _importlib_util.find_spec("mcp")
+if _mcp_spec and _mcp_spec.origin and "openharness" in _mcp_spec.origin:
+    _offenders = [p for p in _sys.path if p.endswith("/openharness") and "site-packages" not in p]
+    for _p in _offenders:
+        _sys.path.remove(_p)
+    del _offenders
+del _mcp_spec, _importlib_util, _sys
 
 import httpx
 from mcp import ClientSession, StdioServerParameters

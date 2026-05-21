@@ -350,23 +350,31 @@ async def _run_query_loop(
     from openharness.engine.query import run_query
     from openharness.engine.messages import ConversationMessage
 
+    # todo @Toby注释: [SubAgent 对话隔离] 创建全新的 messages 列表，只包含子 Agent 自己的 prompt。
+    # 这是 SubAgent 独立性的核心——和主 Agent 的 QueryEngine.messages 完全隔离，
+    # 每个子 Agent 拥有自己独立的对话历史，LLM 不知道其他 Agent 的存在。
     messages: list[ConversationMessage] = [
         ConversationMessage.from_user_text(config.prompt)
     ]
 
+    # todo @Toby注释: [核心循环] 复用主 Agent 同款引擎 run_query()，但注入子 Agent 专属的
+    # QueryContext（独立 tools/system_prompt/permission_checker）。
+    # run_query 返回 AsyncIterator[(StreamEvent, UsageSnapshot | None)]，
+    # 每轮 LLM 响应会 yield 多个 StreamEvent（text_delta → tool_execution → turn_complete）。
     async for event, usage in run_query(query_context, messages):
-        # Track token usage if usage info is provided
+        # todo @Toby注释: [Token 统计] 累计 input/output token 用量，用于成本核算和日志。
         if usage is not None:
             with contextlib.suppress(AttributeError, TypeError):
                 ctx.total_tokens += getattr(usage, "input_tokens", 0)
                 ctx.total_tokens += getattr(usage, "output_tokens", 0)
 
-        # Track tool use events
+        # todo @Toby注释: [工具调用计数] 每个 tool_use 事件表示子 Agent 调了一个工具。
         with contextlib.suppress(AttributeError, TypeError):
             if getattr(event, "type", None) in ("tool_use", "tool_call"):
                 ctx.tool_use_count += 1
 
-        # Check for cancellation or shutdown between events
+        # todo @Toby注释: [取消信号检查] 每处理一个 event 后检查 abort_controller，
+        # 支持双信号：cancel_event(优雅退出，完成当前 turn) / force_cancel(立即终止 Task)。
         if ctx.abort_controller.is_cancelled:
             logger.debug(
                 "[in_process] %s: abort_controller cancelled, stopping query loop",
@@ -374,12 +382,16 @@ async def _run_query_loop(
             )
             return
 
-        # Drain mailbox — handle shutdown requests immediately
+        # todo @Toby注释: [Mailbox 轮询] 在每轮 LLM 响应之间，检查文件 mailbox 是否有新消息。
+        # 消息类型: shutdown(终止子Agent) / user_message(leader 发来的新指令)。
+        # 这是跨 Agent IPC 的唯一通道——不在同一进程内共享内存。
         should_stop = await _drain_mailbox(mailbox, ctx)
         if should_stop:
             return
 
-        # Drain message queue and inject as new turns
+        # todo @Toby注释: [消息注入] 将 mailbox 收到的 user_message 作为新的 user turn
+        # 追加到对话历史中，下一轮 run_query 循环时 LLM 就能看到 leader 的新指令。
+        # 这使得 leader 可以在子 Agent 运行中途动态派发新任务。
         while not ctx.message_queue.empty():
             try:
                 queued = ctx.message_queue.get_nowait()
@@ -392,6 +404,8 @@ async def _run_query_loop(
             )
             messages.append(ConversationMessage(role="user", content=queued.text))
 
+    # todo @Toby注释: [状态转换] run_query 自然结束（LLM 不再返回 tool_uses）→ 进入 idle 状态。
+    # 此时 start_in_process_teammate 的 finally 块会向 leader 的 mailbox 发送 idle_notification。
     ctx.status = "idle"
 
 

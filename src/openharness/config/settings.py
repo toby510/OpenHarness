@@ -848,6 +848,19 @@ class Settings(BaseModel):
     def merge_cli_overrides(self, **overrides: Any) -> Settings:
         """Return a new Settings with CLI overrides applied (non-None values only)."""
         updates = {k: v for k, v in overrides.items() if v is not None}
+        # permission_mode is a CLI convenience key that maps to
+        # settings.permission.mode (nested PermissionSettings), not a top-level field.
+        permission_mode_raw = updates.pop("permission_mode", None)
+        if permission_mode_raw is not None:
+            try:
+                mode = (
+                    permission_mode_raw
+                    if isinstance(permission_mode_raw, PermissionMode)
+                    else PermissionMode(permission_mode_raw)
+                )
+                updates["permission"] = self.permission.model_copy(update={"mode": mode})
+            except ValueError:
+                pass  # invalid mode string → ignore
         # Strip ANSI escape sequences from model name if present
         if "model" in updates and isinstance(updates["model"], str):
             updates["model"] = strip_ansi_escape_sequences(updates["model"])

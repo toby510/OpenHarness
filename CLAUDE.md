@@ -64,6 +64,91 @@ uv build                       # Build wheel via hatchling
 
 Both are declared in `[tool.hatch.build.targets.wheel]` in `pyproject.toml`.
 
+### `src/openharness/` Directory Map (29 个目录，4 层架构)
+
+```
+┌─────────────────────────────────────────────────────────────────────┐
+│  Layer 4: 应用层 (消费 engine 循环)                                  │
+│  ─────────────────────────────                                      │
+│  autopilot/  channels/  coordinator/  swarm/  tasks/  bridge/      │
+│  sandbox/  personalization/                                        │
+├─────────────────────────────────────────────────────────────────────┤
+│  Layer 3: UI & 交互层                                               │
+│  ────────────────                                                   │
+│  ui/  commands/  skills/  voice/  keybindings/  themes/  vim/      │
+│  output_styles/  state/                                            │
+├─────────────────────────────────────────────────────────────────────┤
+│  Layer 2: 元能力/扩展层                                             │
+│  ───────────────────                                                │
+│  plugins/  mcp/  memory/  prompts/  services/                      │
+├─────────────────────────────────────────────────────────────────────┤
+│  Layer 1: ★ 核心引擎层 (所有路径必经之地)                             │
+│  ─────────────────────────────────────                              │
+│  engine/  tools/  permissions/  hooks/  api/  auth/  config/       │
+└─────────────────────────────────────────────────────────────────────┘
+```
+
+**★ Layer 1 — 核心引擎（必读，理解 harness 的钥匙）**
+
+| 目录 | 职责 | 核心文件 |
+|------|------|---------|
+| `engine/` | Agent Loop 心脏：`QueryEngine` 持有对话状态，`run_query()` 实现 LLM 对话循环，`_execute_tool_call()` 用 PreHook → 权限 → execute → PostHook 的流水线安全执行每个工具 | `query.py:723 run_query`, `query.py:921 _execute_tool_call`, `query_engine.py:165 submit_message` |
+| `tools/` | 所有工具的基类 `BaseTool` + 注册表 `ToolRegistry`。43+ 个工具覆盖文件 I/O、Shell、搜索、Web、MCP、Cron、Agent 等 | `base.py` BaseTool/ToolRegistry, `__init__.py` 工具注册 |
+| `permissions/` | 安全决策引擎：敏感路径无条件拒绝 → deny list → allow list → path rules → mode 决策 | `checker.py:PermissionChecker.evaluate()` |
+| `hooks/` | 生命周期拦截：PreToolUse/PostToolUse 等 10 个事件点，支持 command/http/prompt 三种 hook 类型，可阻断工具执行 | `executor.py:HookExecutor.execute()` |
+| `api/` | LLM 抽象层：Anthropic SDK + OpenAI 兼容客户端，自动重试（3 次，指数退避），provider 检测和 capabilities 查询 | `client.py` AnthropicApiClient, `openai_client.py` |
+| `auth/` | 统一认证：API key / browser OAuth / device code 多种凭证流，加密存储 | |
+| `config/` | 配置解析：CLI args → 环境变量 → `settings.json` → defaults，Pydantic 建模 | `settings.py` Settings/load_settings, `paths.py` |
+
+**★ Layer 2 — 元能力/扩展层（让 harness 可扩展）**
+
+| 目录 | 职责 |
+|------|------|
+| `plugins/` | 第三方插件系统：`plugin.json` manifest → 贡献 skills/commands/agents/tools/hooks/mcp |
+| `mcp/` | Model Context Protocol 客户端：stdio + HTTP(Streamable) + WebSocket 三种传输 |
+| `skills/` | 按需知识加载：从 bundled/user/project/plugin 四源发现 `.md`，frontmatter 解析 |
+| `prompts/` | 运行时 prompt 构建：聚合 CLAUDE.md + 环境信息 + context provider |
+| `memory/` | 持久化跨会话记忆：CLAUDE.md 加载、项目级 memory 条目存储 |
+| `services/` | 后台服务：`compact/`(对话压缩)、`autodream/`(记忆整理)、`cron/`、`lsp/`(代码智能) |
+
+**★ Layer 3 — UI & 交互层**
+
+| 目录 | 职责 |
+|------|------|
+| `ui/` | TUI 层：Textual REPL + React 前端 + 权限弹窗 + 流式输出渲染 |
+| `commands/` | 斜杠命令注册表：`/compact`, `/cost`, `/memory`, `/plan`, `/review`, `/deploy` 等 40+ 命令 |
+| `skills/` | 技能系统 (同 Layer 2，也向 UI 暴露命令) |
+| `voice/` | 语音输入：speech-to-text 流式识别 |
+| `keybindings/` | 键盘快捷键配置 |
+| `themes/` `output_styles/` `vim/` `state/` | 外观/样式/状态持久化 |
+
+**★ Layer 4 — 应用层（消费 Agent Loop 的"上层建筑"）**
+
+| 目录 | 职责 |
+|------|------|
+| `autopilot/` | 自主交付流水线：任务队列 → worktree 隔离 → Agent 执行 → 验证 → repair → git commit/PR/merge |
+| `coordinator/` | 多 Agent 编排：`TeamRegistry` + `AgentDefinition` |
+| `swarm/` | Agent 生命周期：subprocess 后台 Agent 生成、mailbox IPC、worktree 隔离、permission 同步 |
+| `tasks/` | 后台任务管理：local agent / shell task 的 spawn、stop、status、result |
+| `channels/` | 外部 IM 接入：Telegram/Discord/Slack/钉钉/飞书/WhatsApp/QQ/Matrix 等 10+ 平台 |
+| `bridge/` | 子 CLI 会话桥接 |
+| `sandbox/` | Docker 隔离执行 |
+| `personalization/` | 自动提取用户偏好 |
+
+### 重点阅读路径
+
+理解 harness 架构只需要按这个顺序读 5 个文件：
+
+| 优先级 | 文件 | 回答什么问题 |
+|--------|------|------------|
+| ★★★ | `engine/query.py:632 run_query` | Agent 循环怎么转起来的？ |
+| ★★★ | `engine/query.py:921 _execute_tool_call` | 一个工具调用怎么被安全执行的？ |
+| ★★ | `permissions/checker.py` | 凭什么决定 allow/deny/confirm？ |
+| ★★ | `hooks/executor.py` | 插件怎么在工具执行前后插入逻辑？ |
+| ★ | `tools/base.py` | 怎么扩展一个新工具？ |
+
+读完这 5 个文件再看上层应用（autopilot、channels、coordinator）才能理解它们为什么这样设计。
+
 ### The Agent Loop (`engine/`)
 
 The heart of the system is in `openharness.engine`:
