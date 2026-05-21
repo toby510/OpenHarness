@@ -63,8 +63,12 @@ class MemorySettings(BaseModel):
     enabled: bool = True
     max_files: int = 5
     max_entrypoint_lines: int = 200
+    max_entrypoint_bytes: int = 25_000
     context_window_tokens: int | None = None
     auto_compact_threshold_tokens: int | None = None
+    auto_extract_enabled: bool = False
+    auto_extract_max_records: int = 3
+    session_memory_enabled: bool = True
     auto_dream_enabled: bool = False
     auto_dream_min_hours: float = 24.0
     auto_dream_min_sessions: int = 5
@@ -847,6 +851,8 @@ class Settings(BaseModel):
         # Strip ANSI escape sequences from model name if present
         if "model" in updates and isinstance(updates["model"], str):
             updates["model"] = strip_ansi_escape_sequences(updates["model"])
+        if "effort" in updates and isinstance(updates["effort"], str):
+            updates["effort"] = "xhigh" if updates["effort"].strip().lower() == "max" else updates["effort"].strip().lower()
         merged = self.model_copy(update=updates)
         if not updates:
             return merged
